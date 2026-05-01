@@ -96,26 +96,22 @@ class sqlConnection():
         if log:
             self.execSingle(
                 f"""
-                    MERGE INTO {schemaName}.{syncTableName} AS target
-                    USING (VALUES('{tableName}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET())) AS source (tableName, date, records, insertedTimestamp)
-                    ON target.tableName = source.tableName AND target.date = source.date
-                    WHEN MATCHED THEN 
-                        UPDATE SET records = source.records, insertedTimestamp = source.insertedTimestamp
-                    WHEN NOT MATCHED THEN
-                        INSERT (tableName, date, records)
-                        VALUES (source.tableName, source.date, source.records);
-                """
-
+                    INSERT INTO {schemaName}.{syncTableName}
+                        (tableName, date, records, insertedTimestamp)
+                    VALUES
+                        ('{tableName}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET());
+                        """
                 # f"""
                 #     MERGE INTO {schemaName}.{syncTableName} AS target
-                #     USING (VALUES('{tableName}', '{datetime.now().date()}', {len(df)})) AS source (tableName, date, records)
+                #     USING (VALUES('{tableName}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET())) AS source (tableName, date, records, insertedTimestamp)
                 #     ON target.tableName = source.tableName AND target.date = source.date
                 #     WHEN MATCHED THEN 
-                #         UPDATE SET records = source.records
+                #         UPDATE SET records = source.records, insertedTimestamp = source.insertedTimestamp
                 #     WHEN NOT MATCHED THEN
                 #         INSERT (tableName, date, records)
                 #         VALUES (source.tableName, source.date, source.records);
                 # """
+
                 )
 
         self.connection.commit()
