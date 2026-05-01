@@ -3,7 +3,11 @@ from datetime import datetime
 
 import pandas as pd
 import numpy as np
-import pyodbc
+try:
+    import pyodbc
+except ImportError:
+    raise ImportError("pyodbc is required. Install with pip install pyodbc")
+
 import yaml
 
 from azure.keyvault.secrets import SecretClient
