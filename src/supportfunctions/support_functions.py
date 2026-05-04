@@ -89,7 +89,7 @@ class sqlConnection():
                     ON {" AND ".join(f"T.{c} = S.{c}" for c in mergeKeys)}
                     WHEN MATCHED THEN
                         UPDATE SET
-                        {' AND '.join([f"T.{col} = S.{col}" for col in [c for c in cols if c not in mergeKeys]])}
+                        {', '.join([f"T.{col} = S.{col}" for col in [c for c in cols if c not in mergeKeys]])}
                     WHEN NOT MATCHED THEN
                         INSERT ({', '.join(cols)})
                         VALUES ({', '.join([f"S.{col}" for col in cols])});
