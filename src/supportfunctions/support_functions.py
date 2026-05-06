@@ -23,9 +23,10 @@ class sqlConnection():
         self.connection = self.openConnection()
         self.cursorSingle = self.get_cursor()
         self.cursorMany = self.get_cursor(fast=True)
+        self.configSql = configSql
 
     def __str__(self):
-        return f"SQLConnection(server='{self.credentials['server']}', database='{self.credentials['database']}', user='{self.credentials['user']}', open={self.open})"
+        return f"SQLConnection(server='{self.configSql['server']}', database='{self.configSql['database']}', schema='{self.configSql['schema']}', open={self.open})"
     
     def constructConstring(self, sqlConnection, sqlUser, sqlPassword):
         c = sqlConnection
