@@ -79,14 +79,14 @@ class sqlConnection():
             if not merge:
                 placeholders = ", ".join("?" for _ in cols)
                 self.execSingle(f"TRUNCATE TABLE {schemaName}.{tableName}")
-                self.cursorMany.executemany(f"INSERT INTO {schemaName}.{tableName} ({', '.join(cols)}) VALUES({placeholders})", self.parseValues(df))
+                self.cursorMany.executemany(f"INSERT INTO {schemaName}.{tableName} ({', '.join([f"[{col}]" for col in cols])}) VALUES({placeholders})", self.parseValues(df))
             else:
                 if merge and not mergeKeys:
                     raise Exception("mergeKeys is required when merge is True")
 
                 query = f"""
                     MERGE INTO {schemaName}.{tableName} AS T
-                    USING (SELECT ? AS {', ? AS '.join(cols)}) AS S
+                    USING (SELECT ? AS {', ? AS '.join([f"[{col}]" for col in cols])}) AS S
                     ON {" AND ".join(f"T.{c} = S.{c}" for c in mergeKeys)}
                     WHEN MATCHED THEN
                         UPDATE SET
