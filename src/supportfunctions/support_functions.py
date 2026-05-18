@@ -122,7 +122,7 @@ class sqlConnection():
         self.connection.commit()
         return
 
-    def writeManyDivision(self, df: pd.DataFrame, tableName, schemaName, division, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True):
+    def writeManyEntity(self, df: pd.DataFrame, tableName, schemaName, entity, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, entityColName='entity'):
             if not df.empty:
                 print('Found data')
                 cols =  df.columns.to_list()
@@ -132,7 +132,7 @@ class sqlConnection():
 
                 if not merge:
                     placeholders = ", ".join("?" for _ in cols)
-                    self.execSingle(f"TRUNCATE TABLE {schemaName}.{tableName}")
+                    self.execSingle(f"DELETE FROM {schemaName}.{tableName} WHERE {entityColName} = {entity}")
                     self.cursorMany.executemany(f"INSERT INTO {schemaName}.{tableName} ({', '.join(cols)}) VALUES({placeholders})", self.parseValues(df))
                 else:
                     if merge and not mergeKeys:
@@ -157,9 +157,9 @@ class sqlConnection():
                 self.execSingle(
                     f"""
                         INSERT INTO {schemaName}.{syncTableName}
-                            (tableName, division, date, records, insertedTimestamp)
+                            (tableName, {entityColName}, date, records, insertedTimestamp)
                         VALUES
-                            ('{tableName}', '{division}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET());
+                            ('{tableName}', '{entity}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET());
                             """
                     )
 
