@@ -122,6 +122,50 @@ class sqlConnection():
         self.connection.commit()
         return
 
+    def writeManyDivision(self, df: pd.DataFrame, tableName, schemaName, division, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True):
+            if not df.empty:
+                print('Found data')
+                cols =  df.columns.to_list()
+                df[df.select_dtypes(include="bool").columns] = df.select_dtypes(include="bool").astype(int)
+                df = df.where(pd.notna(df), None)
+                # df.to_csv(f"{tableName}.csv", index=False, sep=";")
+
+                if not merge:
+                    placeholders = ", ".join("?" for _ in cols)
+                    self.execSingle(f"TRUNCATE TABLE {schemaName}.{tableName}")
+                    self.cursorMany.executemany(f"INSERT INTO {schemaName}.{tableName} ({', '.join(cols)}) VALUES({placeholders})", self.parseValues(df))
+                else:
+                    if merge and not mergeKeys:
+                        raise Exception("mergeKeys is required when merge is True")
+
+                    query = f"""
+                        MERGE INTO {schemaName}.{tableName} AS T
+                        USING (SELECT ? AS {', ? AS '.join(cols)}) AS S
+                        ON {" AND ".join(f"T.{c} = S.{c}" for c in mergeKeys)}
+                        WHEN MATCHED THEN
+                            UPDATE SET
+                            {', '.join([f"T.{col} = S.{col}" for col in [c for c in cols if c not in mergeKeys]])}
+                        WHEN NOT MATCHED THEN
+                            INSERT ({', '.join(cols)})
+                            VALUES ({', '.join([f"S.{col}" for col in cols])});
+                    """
+
+                    self.cursorMany.executemany(query, self.parseValues(df))
+            print("Committing...")
+
+            if log:
+                self.execSingle(
+                    f"""
+                        INSERT INTO {schemaName}.{syncTableName}
+                            (tableName, division, date, records, insertedTimestamp)
+                        VALUES
+                            ('{tableName}', '{division}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET());
+                            """
+                    )
+
+            self.connection.commit()
+            return
+
     def parseValues(self, df: pd.DataFrame):
         data = []
         for _, row in df.iterrows():
@@ -139,23 +183,6 @@ class sqlConnection():
                         d.append(row[col])
             data.append(d)
         return data
-
-    # def parseValues(self, df: pd.DataFrame):
-    #     for _, row in df.iterrows():
-    #         d = []
-    #         for col in df.columns.tolist():
-    #             if df[col].dtype == 'object':
-    #                 if str(row[col]) == 'None':
-    #                     d.append(None)
-    #                 else:
-    #                     d.append(str(row[col]))
-    #             else:
-    #                 if pd.isna(row[col]) or row[col] == np.nan:
-    #                     d.append(None)
-    #                 else:
-    #                     d.append(row[col])
-            # yield tuple(d)  # yield in plaats van append naar lijst
-
 
     def close(self):
             if self.cursorSingle:
