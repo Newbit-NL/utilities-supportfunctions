@@ -43,13 +43,13 @@ class sqlConnection():
         )
     def openConnection(self):
 
-        for i in range(4):
+        for i in range(5):
             try:
                 self.open = True
                 return pyodbc.connect(self.connectionString)
             except Exception as e:
                 print(f"Error in sqlConnection >>>> {e}")
-                if i == 2:
+                if i == 5:
                     self.open = False
                     print(f"Fout bij het openen van de verbinding: {e}")
                     raise e
