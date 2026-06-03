@@ -1,5 +1,6 @@
 # import requests
 from datetime import datetime
+from time import sleep
 
 import pandas as pd
 import numpy as np
@@ -42,7 +43,7 @@ class sqlConnection():
         )
     def openConnection(self):
 
-        for i in range(3):
+        for i in range(4):
             try:
                 self.open = True
                 return pyodbc.connect(self.connectionString)
@@ -52,6 +53,10 @@ class sqlConnection():
                     self.open = False
                     print(f"Fout bij het openen van de verbinding: {e}")
                     raise e
+                wait = 2 ** i+1  # 1s, 2s, 4s
+                print(f"Wachten {wait} seconden voor volgende poging...")
+                sleep(wait)
+
 
     def get_cursor(self, fast=False):
         cur = self.connection.cursor()
@@ -59,7 +64,18 @@ class sqlConnection():
             cur.fast_executemany = True
         return cur
 
+    def _ensure_connection(self):
+        try:
+            self.cursorSingle.execute("SELECT 1")
+        except Exception:
+            print("Herstellen verbinding met SQL server")
+            self.connection = self.openConnection()
+            self.cursorSingle = self.get_cursor()
+            self.cursorMany = self.get_cursor(fast=True)
+
     def execSingle(self, query):
+        self._ensure_connection()
+
         self.cursorSingle.execute(query)
         if query.strip().lower().startswith("select"):
             result = self.cursorSingle.fetchall()  # haalt alle rijen op
@@ -69,6 +85,7 @@ class sqlConnection():
             return None
 
     def writeMany(self, df: pd.DataFrame, tableName, schemaName, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True):
+        self._ensure_connection()
         if not df.empty:
             print('Found data')
             cols =  df.columns.to_list()
