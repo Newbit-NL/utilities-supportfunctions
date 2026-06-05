@@ -67,6 +67,7 @@ class sqlConnection():
     def _ensure_connection(self):
         try:
             self.cursorSingle.execute("SELECT 1")
+            self.cursorSingle.fetchone()
         except Exception:
             print("Herstellen verbinding met SQL server")
             self.connection = self.openConnection()
