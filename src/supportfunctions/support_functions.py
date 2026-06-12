@@ -85,7 +85,7 @@ class sqlConnection():
             self.connection.commit()
             return None
 
-    def writeMany(self, df: pd.DataFrame, tableName, schemaName, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True):
+    def writeMany(self, df: pd.DataFrame, tableName, schemaName, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, updateInsertedTs=False):
         self._ensure_connection()
         if not df.empty:
             print('Found data')
@@ -109,6 +109,7 @@ class sqlConnection():
                     WHEN MATCHED THEN
                         UPDATE SET
                         {', '.join([f"T.{col} = S.{col}" for col in [c for c in cols if c not in mergeKeys]])}
+                        {f", T.insertedTimestamp = SYSDATETIMEOFFSET()" if updateInsertedTs else ""}
                     WHEN NOT MATCHED THEN
                         INSERT ({', '.join(cols)})
                         VALUES ({', '.join([f"S.{col}" for col in cols])});
