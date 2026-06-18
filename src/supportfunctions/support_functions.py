@@ -4,20 +4,13 @@ from time import sleep
 
 import pandas as pd
 import numpy as np
-try:
-    import pyodbc
-except ImportError:
-    raise ImportError("pyodbc is required. Install with pip install pyodbc")
-
 import yaml
-
-from azure.keyvault.secrets import SecretClient
-from azure.identity import DefaultAzureCredential
 
 
 #init_check checked of de check table al bestaat. Zo nee, dan maakt hij alle benodigde tabellen aan, het schema, etc.
 
 class sqlConnection():
+
     def __init__(self, configSql, sqlUser, sqlPassword):
         self.connectionString = self.constructConstring(configSql, sqlUser, sqlPassword)
         self.open = None
@@ -42,6 +35,10 @@ class sqlConnection():
             f"""Connection Timeout=30;"""
         )
     def openConnection(self):
+        try:
+            import pyodbc
+        except ImportError:
+            raise ImportError("pyodbc is required. Install with pip install pyodbc")
 
         for i in range(5):
             try:
@@ -259,6 +256,9 @@ class sqlConnection():
 
 class secrets():
     def __init__(self, vaultUrl='', local=False, prefix='', credFolder=''):
+        from azure.keyvault.secrets import SecretClient
+        from azure.identity import DefaultAzureCredential
+
         self.local = local
         self.prefix = prefix
         self.credFolder = credFolder
