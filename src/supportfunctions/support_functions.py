@@ -1,7 +1,6 @@
 # import requests
 from datetime import datetime
 from time import sleep
-import re
 from typing import Literal
 
 import pandas as pd
@@ -110,7 +109,7 @@ class sqlConnection():
     @staticmethod
     def _quoteIdent(name: str) -> str:
         """Valideer en quote een SQL Server identifier (schema/tabel/kolom)."""
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_ ]+", name):
+        if not isinstance(name, str) or not name:
             raise ValueError(f"Invalid identifier: {name!r}")
         return "[" + name.replace("]", "]]") + "]"
 
