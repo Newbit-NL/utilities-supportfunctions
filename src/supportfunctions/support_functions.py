@@ -131,7 +131,7 @@ class sqlConnection():
             
             if not merge:
                 placeholders = ", ".join("?" for _ in cols)
-                self.execSingle(f"TRUNCATE TABLE [{schema}].[{table}]")
+                self.execSingle(f"TRUNCATE TABLE {schema}.{table}")
                 self.cursorMany.executemany(f"INSERT INTO {schema}.{table} ({', '.join(qCols[c] for c in cols)}) VALUES({placeholders})", self.parseValues(df))
             else:
                 
