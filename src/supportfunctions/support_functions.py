@@ -137,7 +137,7 @@ class sqlConnection():
                 
                 query = f"""
                     MERGE INTO {schema}.{table} AS T
-                    USING (SELECT ? AS {', ? AS '.join(f"? AS {qCols[c]}" for c in cols)}) AS S
+                    USING (SELECT {', '.join(f"? AS {qCols[c]}" for c in cols)}) AS S
                     ON {" AND ".join(f"T.{qCols[c]} = S.{qCols[c]}" for c in mergeKeys)}
                     WHEN MATCHED THEN
                         UPDATE SET
@@ -200,7 +200,7 @@ class sqlConnection():
 
                 query = f"""
                     MERGE INTO {schema}.{table} AS T
-                    USING (SELECT ? AS {', ? AS '.join(f"? AS {qCols[c]}" for c in cols)}) AS S
+                    USING (SELECT {', '.join(f"? AS {qCols[c]}" for c in cols)}) AS S
                     ON {" AND ".join(f"T.{qCols[c]} = S.{qCols[c]}" for c in mergeKeys)}
                     WHEN MATCHED THEN
                         UPDATE SET
