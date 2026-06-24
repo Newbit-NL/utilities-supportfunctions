@@ -2,6 +2,7 @@
 from datetime import datetime
 from time import sleep
 import re
+from typing import Literal
 
 import pandas as pd
 import numpy as np
@@ -83,7 +84,7 @@ class sqlConnection():
     #         self.connection.commit()
     #         return None
 
-    def execSingle(self, query, params=None, as_dataframe=False, returnColumns=False):
+    def execSingle(self, query, params=None, return_as: Literal["dict", "df", "list"] | None = None, returnColumns=False):
             self._ensure_connection()
 
             self.cursorSingle.execute(query, params or ())
@@ -91,8 +92,13 @@ class sqlConnection():
                 rows = self.cursorSingle.fetchall()
                 columns = [desc[0] for desc in self.cursorSingle.description]
 
-                if as_dataframe:
-                    return pd.DataFrame(rows, columns=columns)
+                if return_as:
+                    if return_as == "dict":
+                        return [dict(zip(columns, row)) for row in rows]
+                    elif return_as == "df":
+                        return pd.DataFrame([tuple(r) for r in rows], columns=columns)
+                    elif return_as == "list":
+                        return rows
                 elif returnColumns:
                     return columns, rows
                 else:
