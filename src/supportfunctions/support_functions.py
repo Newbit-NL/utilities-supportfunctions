@@ -1,6 +1,7 @@
 # import requests
 from datetime import datetime
 from time import sleep
+import re
 
 import pandas as pd
 import numpy as np
@@ -71,45 +72,75 @@ class sqlConnection():
             self.cursorSingle = self.get_cursor()
             self.cursorMany = self.get_cursor(fast=True)
 
-    def execSingle(self, query):
-        self._ensure_connection()
+    # def execSingle(self, query):
+    #     self._ensure_connection()
 
-        self.cursorSingle.execute(query)
-        if query.strip().lower().startswith("select"):
-            result = self.cursorSingle.fetchall()  # haalt alle rijen op
-            return result
-        else:
-            self.connection.commit()
-            return None
+    #     self.cursorSingle.execute(query)
+    #     if query.strip().lower().startswith("select"):
+    #         result = self.cursorSingle.fetchall()  # haalt alle rijen op
+    #         return result
+    #     else:
+    #         self.connection.commit()
+    #         return None
+
+    def execSingle(self, query, params=None, as_dataframe=False, returnColumns=False):
+            self._ensure_connection()
+
+            self.cursorSingle.execute(query, params or ())
+            if query.strip().lower().startswith("select"):
+                rows = self.cursorSingle.fetchall()
+                columns = [desc[0] for desc in self.cursorSingle.description]
+
+                if as_dataframe:
+                    return pd.DataFrame(rows, columns=columns)
+                elif returnColumns:
+                    return columns, rows
+                else:
+                    return rows
+            else:
+                self.connection.commit()
+                return None
+
+    @staticmethod
+    def _quoteIdent(name: str) -> str:
+        """Valideer en quote een SQL Server identifier (schema/tabel/kolom)."""
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_ ]+", name):
+            raise ValueError(f"Invalid identifier: {name!r}")
+        return "[" + name.replace("]", "]]") + "]"
 
     def writeMany(self, df: pd.DataFrame, tableName, schemaName, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, updateInsertedTs=False):
         self._ensure_connection()
         if not df.empty:
+            
             print('Found data')
-            cols =  df.columns.to_list()
+            cols = df.columns.to_list()
             df[df.select_dtypes(include="bool").columns] = df.select_dtypes(include="bool").astype(int)
             df = df.where(pd.notna(df), None)
-            # df.to_csv(f"{tableName}.csv", index=False, sep=";")
 
+            schema = self._quoteIdent(schemaName)
+            table = self._quoteIdent(tableName)
+            qCols = {c: self._quoteIdent(c) for c in cols}
+
+            if merge and not mergeKeys:
+                raise Exception("mergeKeys is required when merge is True")
+            
             if not merge:
                 placeholders = ", ".join("?" for _ in cols)
-                self.execSingle(f"TRUNCATE TABLE {schemaName}.{tableName}")
-                self.cursorMany.executemany(f"INSERT INTO {schemaName}.{tableName} ({', '.join([f"[{col}]" for col in cols])}) VALUES({placeholders})", self.parseValues(df))
+                self.execSingle(f"TRUNCATE TABLE [{schema}].[{table}]")
+                self.cursorMany.executemany(f"INSERT INTO {schema}.{table} ({', '.join(qCols[c] for c in cols)}) VALUES({placeholders})", self.parseValues(df))
             else:
-                if merge and not mergeKeys:
-                    raise Exception("mergeKeys is required when merge is True")
-
+                
                 query = f"""
-                    MERGE INTO {schemaName}.{tableName} AS T
-                    USING (SELECT ? AS {', ? AS '.join([f"[{col}]" for col in cols])}) AS S
-                    ON {" AND ".join(f"T.{c} = S.{c}" for c in mergeKeys)}
+                    MERGE INTO {schema}.{table} AS T
+                    USING (SELECT ? AS {', ? AS '.join(f"? AS {qCols[c]}" for c in cols)}) AS S
+                    ON {" AND ".join(f"T.{qCols[c]} = S.{qCols[c]}" for c in mergeKeys)}
                     WHEN MATCHED THEN
                         UPDATE SET
-                        {', '.join([f"T.{col} = S.{col}" for col in [c for c in cols if c not in mergeKeys]])}
+                        {', '.join(f"T.{qCols[c]} = S.{qCols[c]}" for c in [c for c in cols if c not in mergeKeys])}
                         {f", T.insertedTimestamp = SYSDATETIMEOFFSET()" if updateInsertedTs else ""}
                     WHEN NOT MATCHED THEN
-                        INSERT ({', '.join(cols)})
-                        VALUES ({', '.join([f"S.{col}" for col in cols])});
+                        INSERT ({', '.join(qCols[c] for c in cols)})
+                        VALUES ({', '.join(f"S.{qCols[c]}" for c in cols)});
                 """
 
                 self.cursorMany.executemany(query, self.parseValues(df))
@@ -117,13 +148,14 @@ class sqlConnection():
         if log:
             self.execSingle(
                 f"""
-                    INSERT INTO {schemaName}.{syncTableName}
+                    INSERT INTO {schema}.{self._quoteIdent(syncTableName)}
                         (tableName, date, records, insertedTimestamp)
-                    VALUES
-                        ('{tableName}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET());
-                        """
+                    VALUES (?, ?, ?, SYSDATETIMEOFFSET());
+                """,
+                params=[tableName, datetime.now().date(), len(df)]
+
                 # f"""
-                #     MERGE INTO {schemaName}.{syncTableName} AS target
+                #     MERGE INTO {schema}.{syncTableName} AS target
                 #     USING (VALUES('{tableName}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET())) AS source (tableName, date, records, insertedTimestamp)
                 #     ON target.tableName = source.tableName AND target.date = source.date
                 #     WHEN MATCHED THEN 
@@ -138,49 +170,58 @@ class sqlConnection():
         self.connection.commit()
         return
 
-    def writeManyEntity(self, df: pd.DataFrame, tableName, schemaName, entity, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, entityColName='entity'):
-            if not df.empty:
-                print('Found data')
-                cols =  df.columns.to_list()
-                df[df.select_dtypes(include="bool").columns] = df.select_dtypes(include="bool").astype(int)
-                df = df.where(pd.notna(df), None)
-                # df.to_csv(f"{tableName}.csv", index=False, sep=";")
+    def writeManyEntity(self, df: pd.DataFrame, tableName, schemaName, entity, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, entityColName='entity', updateInsertedTs=False):
+        self._ensure_connection()
+        if not df.empty:
 
-                if not merge:
-                    placeholders = ", ".join("?" for _ in cols)
-                    self.execSingle(f"DELETE FROM {schemaName}.{tableName} WHERE {entityColName} = {entity}")
-                    self.cursorMany.executemany(f"INSERT INTO {schemaName}.{tableName} ({', '.join(cols)}) VALUES({placeholders})", self.parseValues(df))
-                else:
-                    if merge and not mergeKeys:
-                        raise Exception("mergeKeys is required when merge is True")
+            print('Found data')
+            cols = df.columns.to_list()
+            df[df.select_dtypes(include="bool").columns] = df.select_dtypes(include="bool").astype(int)
+            df = df.where(pd.notna(df), None)
 
-                    query = f"""
-                        MERGE INTO {schemaName}.{tableName} AS T
-                        USING (SELECT ? AS {', ? AS '.join(cols)}) AS S
-                        ON {" AND ".join(f"T.{c} = S.{c}" for c in mergeKeys)}
-                        WHEN MATCHED THEN
-                            UPDATE SET
-                            {', '.join([f"T.{col} = S.{col}" for col in [c for c in cols if c not in mergeKeys]])}
-                        WHEN NOT MATCHED THEN
-                            INSERT ({', '.join(cols)})
-                            VALUES ({', '.join([f"S.{col}" for col in cols])});
-                    """
+            schema = self._quoteIdent(schemaName)
+            table = self._quoteIdent(tableName)
+            qCols = {c: self._quoteIdent(c) for c in cols}
 
-                    self.cursorMany.executemany(query, self.parseValues(df))
-            print("Committing...")
+            if merge and not mergeKeys:
+                raise Exception("mergeKeys is required when merge is True")
 
-            if log:
-                self.execSingle(
-                    f"""
-                        INSERT INTO {schemaName}.{syncTableName}
-                            (tableName, {entityColName}, date, records, insertedTimestamp)
-                        VALUES
-                            ('{tableName}', '{entity}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET());
-                            """
-                    )
 
-            self.connection.commit()
-            return
+            if not merge:           
+                placeholders = ", ".join("?" for _ in cols)
+                self.execSingle(f"DELETE FROM {schema}.{table} WHERE {self._quoteIdent(entityColName)} = ?", params=[entity])
+                self.cursorMany.executemany(f"INSERT INTO {schema}.{table} ({', '.join(qCols[c] for c in cols)}) VALUES({placeholders})", self.parseValues(df))
+            else:
+
+                query = f"""
+                    MERGE INTO {schema}.{table} AS T
+                    USING (SELECT ? AS {', ? AS '.join(f"? AS {qCols[c]}" for c in cols)}) AS S
+                    ON {" AND ".join(f"T.{qCols[c]} = S.{qCols[c]}" for c in mergeKeys)}
+                    WHEN MATCHED THEN
+                        UPDATE SET
+                        {', '.join(f"T.{qCols[c]} = S.{qCols[c]}" for c in [c for c in cols if c not in mergeKeys])}
+                        {f", T.insertedTimestamp = SYSDATETIMEOFFSET()" if updateInsertedTs else ""}
+                    WHEN NOT MATCHED THEN
+                        INSERT ({', '.join(qCols[c] for c in cols)})
+                        VALUES ({', '.join(f"S.{qCols[c]}" for c in cols)});
+                """
+
+
+                self.cursorMany.executemany(query, self.parseValues(df))
+        print("Committing...")
+
+        if log:
+            self.execSingle(
+                f"""
+                    INSERT INTO {schema}.{self._quoteIdent(syncTableName)}
+                        (tableName, {self._quoteIdent(entityColName)}, date, records, insertedTimestamp)
+                    VALUES (?, ?, ?, ?, SYSDATETIMEOFFSET());
+                """,
+                params=[tableName, entity, datetime.now().date(), len(df)]
+                )
+
+        self.connection.commit()
+        return
 
     def parseValues(self, df: pd.DataFrame):
         data = []
