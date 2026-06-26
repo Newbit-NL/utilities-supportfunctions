@@ -148,8 +148,8 @@ class sqlConnection():
                         VALUES ({', '.join(f"S.{qCols[c]}" for c in cols)});
                 """
                 rows = self.parseValues(df)
-                for i in range(0, len(rows), 1000):
-                    self.cursorMany.executemany(query, rows[i:i+1000])
+                for i in range(0, len(rows), 10000):
+                    self.cursorMany.executemany(query, rows[i:i+10000])
                     self.connection.commit()
         print("Committing...")
         if log:
@@ -215,8 +215,8 @@ class sqlConnection():
 
 
                 rows = self.parseValues(df)
-                for i in range(0, len(rows), 1000):
-                    self.cursorMany.executemany(query, rows[i:i+1000])
+                for i in range(0, len(rows), 10000):
+                    self.cursorMany.executemany(query, rows[i:i+10000])
                     self.connection.commit()
         print("Committing...")
 
