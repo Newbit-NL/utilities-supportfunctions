@@ -147,8 +147,10 @@ class sqlConnection():
                         INSERT ({', '.join(qCols[c] for c in cols)})
                         VALUES ({', '.join(f"S.{qCols[c]}" for c in cols)});
                 """
-
-                self.cursorMany.executemany(query, self.parseValues(df))
+                rows = self.parseValues(df)
+                for i in range(0, len(rows), 10000):
+                    self.cursorMany.executemany(query, rows[i:i+10000])
+                    self.connection.commit()
         print("Committing...")
         if log:
             self.execSingle(
@@ -212,7 +214,10 @@ class sqlConnection():
                 """
 
 
-                self.cursorMany.executemany(query, self.parseValues(df))
+                rows = self.parseValues(df)
+                for i in range(0, len(rows), 10000):
+                    self.cursorMany.executemany(query, rows[i:i+10000])
+                    self.connection.commit()
         print("Committing...")
 
         if log:
