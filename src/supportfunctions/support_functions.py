@@ -12,8 +12,9 @@ import yaml
 
 class sqlConnection():
 
-    def __init__(self, configSql, sqlUser, sqlPassword):
-        self.connectionString = self.constructConstring(configSql, sqlUser, sqlPassword)
+    def __init__(self, configSql, sqlUser=None, sqlPassword=None, serverLoginType: Literal["credentials", "entraId"] = "credentials"):
+        self.serverLoginType = serverLoginType
+        self.connectionString = self.constructConstring(configSql, sqlUser, sqlPassword, serverLoginType)
         self.open = None
         self.connection = self.openConnection()
         self.cursorSingle = self.get_cursor()
@@ -21,18 +22,24 @@ class sqlConnection():
         self.configSql = configSql
 
     def __str__(self):
-        return f"SQLConnection(server='{self.configSql['server']}', database='{self.configSql['database']}', schema='{self.configSql['schema']}', open={self.open})"
-    
-    def constructConstring(self, sqlConnection, sqlUser, sqlPassword):
+        return f"SQLConnection(server='{self.configSql['server']}', database='{self.configSql['database']}', open={'True' if self.open else 'False'})"
+
+    def constructConstring(self, sqlConnection, sqlUser, sqlPassword, serverLoginType: Literal["credentials", "entraId"] = "credentials"):
         c = sqlConnection
+        if serverLoginType == "entraId":
+            authSegment = "Authentication=ActiveDirectoryDefault;"
+        elif c['local']:
+            authSegment = "Trusted_Connection=yes;"
+        else:
+            authSegment = f"Uid={sqlUser};PWD={sqlPassword};"
+
         return (
             f"""Driver={{ODBC Driver 18 for SQL Server}};"""
             f"""Server={c["server"]}{','+str(c['port']) if not c['local'] else ''};"""
             f"""Database={c["database"]};"""
-            f"{'Uid='+sqlUser+';PWD='+sqlPassword+';' if not c['local'] else ''}"
-            f"""{'Trusted_Connection=yes;' if c['local'] else ''}"""
+            f"{authSegment}"
             f"""Encrypt=yes;"""
-            f"""TrustServerCertificate={'yes' if c['trust_server_certificate'] else 'no'};"""
+            f"""TrustServerCertificate={'yes' if c.get('trust_server_certificate', False) else 'no'};"""
             f"""Connection Timeout=30;"""
         )
     def openConnection(self):
@@ -72,18 +79,8 @@ class sqlConnection():
             self.cursorSingle = self.get_cursor()
             self.cursorMany = self.get_cursor(fast=True)
 
-    # def execSingle(self, query):
-    #     self._ensure_connection()
 
-    #     self.cursorSingle.execute(query)
-    #     if query.strip().lower().startswith("select"):
-    #         result = self.cursorSingle.fetchall()  # haalt alle rijen op
-    #         return result
-    #     else:
-    #         self.connection.commit()
-    #         return None
-
-    def execSingle(self, query, params=None, return_as: Literal["dict", "df", "list"] | None = None, returnColumns=False):
+    def execSingle(self, query, params=None, return_as: Literal["dict", "df", "list", "single"] | None = None, returnColumns=False):
             self._ensure_connection()
 
             self.cursorSingle.execute(query, params or ())
@@ -98,6 +95,8 @@ class sqlConnection():
                         return pd.DataFrame([tuple(r) for r in rows], columns=columns)
                     elif return_as == "list":
                         return rows
+                    elif return_as == "single":
+                        return rows[0][0] if rows else None
                 elif returnColumns:
                     return columns, rows
                 else:
@@ -161,17 +160,6 @@ class sqlConnection():
                 """,
                 params=[tableName, datetime.now().date(), len(df)]
 
-                # f"""
-                #     MERGE INTO {schema}.{syncTableName} AS target
-                #     USING (VALUES('{tableName}', '{datetime.now().date()}', {len(df)}, SYSDATETIMEOFFSET())) AS source (tableName, date, records, insertedTimestamp)
-                #     ON target.tableName = source.tableName AND target.date = source.date
-                #     WHEN MATCHED THEN 
-                #         UPDATE SET records = source.records, insertedTimestamp = source.insertedTimestamp
-                #     WHEN NOT MATCHED THEN
-                #         INSERT (tableName, date, records)
-                #         VALUES (source.tableName, source.date, source.records);
-                # """
-
                 )
 
         self.connection.commit()
@@ -179,6 +167,9 @@ class sqlConnection():
 
     def writeManyEntity(self, df: pd.DataFrame, tableName, schemaName, entity, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, entityColName='entity', updateInsertedTs=False):
         self._ensure_connection()
+        schema = self._quoteIdent(schemaName)
+        table = self._quoteIdent(tableName)
+
         if not df.empty:
 
             print('Found data')
@@ -186,8 +177,6 @@ class sqlConnection():
             df[df.select_dtypes(include="bool").columns] = df.select_dtypes(include="bool").astype(int)
             df = df.where(pd.notna(df), None)
 
-            schema = self._quoteIdent(schemaName)
-            table = self._quoteIdent(tableName)
             qCols = {c: self._quoteIdent(c) for c in cols}
 
             if merge and not mergeKeys:
@@ -218,7 +207,6 @@ class sqlConnection():
                 for i in range(0, len(rows), 10000):
                     self.cursorMany.executemany(query, rows[i:i+10000])
                     self.connection.commit()
-        print("Committing...")
 
         if log:
             self.execSingle(
@@ -229,7 +217,7 @@ class sqlConnection():
                 """,
                 params=[tableName, entity, datetime.now().date(), len(df)]
                 )
-
+        print("Committing...")
         self.connection.commit()
         return
 
@@ -266,19 +254,22 @@ class sqlConnection():
 
 
     def checkExistingDatabase(self, schemaName, tableName):
-        return self.execSingle(f"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='{schemaName}' AND TABLE_TYPE = 'BASE TABLE'") if True else None
+        return self.execSingle(
+            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'",
+            params=[schemaName]
+            )
 
 
     def constructDatabase(self, configDatabase, schemaName='dbo'):
+        qSchema = self._quoteIdent(schemaName)
         existingTables = self.checkExistingDatabase(schemaName, configDatabase['tables']['monitor'][0]['name'])
         if existingTables:
             print("Database bestaat al")
             existingTables = [r[0] for r in existingTables]
         else:
             print("Database bestaat nog niet. Maak aan...")
-            querySchema = \
-                f"""IF SCHEMA_ID('{schemaName}') IS NULL BEGIN EXEC('CREATE SCHEMA {schemaName}') END"""
-            self.execSingle(querySchema)
+            querySchema = "IF SCHEMA_ID(?) IS NULL BEGIN EXEC('CREATE SCHEMA ' + ?) END"
+            self.execSingle(querySchema, params=[schemaName, qSchema])
             existingTables = []
 
         monitor = configDatabase['tables']['monitor']
@@ -289,20 +280,23 @@ class sqlConnection():
         tables = [t for t in tables if t['name'] not in existingTables]
 
         for table in tables:
+            qTable = self._quoteIdent(table['name'])
             constraints = []
-            if table.get('constraints'):
-                for constraint in table['constraints']:
-                    constraints.append(f"CONSTRAINT {table['name']}_{constraint['name']} {constraint['type']} {'CLUSTERED' if constraint['clustered'] else ''} ({', '.join(constraint['columns'])})")
-
+            for constraint in table.get('constraints', []):
+                qConstraintName = self._quoteIdent(f"{table['name']}_{constraint['name']}")
+                qConstraintCols = ', '.join(self._quoteIdent(c) for c in constraint['columns'])
+                constraints.append(f"CONSTRAINT {qConstraintName} {constraint['type']} {'CLUSTERED' if constraint['clustered'] else ''} ({qConstraintCols})")
 
             self.execSingle(
-                f"""CREATE TABLE {schemaName}.{table['name']}"""
+                f"""CREATE TABLE {qSchema}.{qTable}"""
                 f"""({table['columns'].replace('$NAME', table['name'])}{(','+','.join(constraints)) if len(constraints) > 0 else ''})"""
                 )
-            
-            if table.get('indexes'):
-                for index in table['indexes']:
-                    self.execSingle(f"CREATE INDEX {table['name']}_{index['name']} ON {schemaName}.{table['name']} ({', '.join(index['columns'])})")
+
+            for index in table.get('indexes', []):
+                qIndexName = self._quoteIdent(f"{table['name']}_{index['name']}")
+                qIndexCols = ', '.join(self._quoteIdent(c) for c in index['columns'])
+                includeClause = 'INCLUDE (' + ','.join(self._quoteIdent(c) for c in index['includes']) + ')' if index.get('includes', []) else ''
+                self.execSingle(f"CREATE {'CLUSTERED' if index['clustered'] else 'NONCLUSTERED'} INDEX {qIndexName} ON {qSchema}.{qTable} ({qIndexCols}) {includeClause}")
 
 
 class secrets():
