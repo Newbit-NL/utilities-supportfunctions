@@ -84,7 +84,7 @@ class sqlConnection():
             self._ensure_connection()
 
             self.cursorSingle.execute(query, params or ())
-            if query.strip().lower().startswith("select"):
+            if query.strip().lower().startswith(("select", "with")):
                 rows = self.cursorSingle.fetchall()
                 columns = [desc[0] for desc in self.cursorSingle.description]
 
