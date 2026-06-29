@@ -114,6 +114,9 @@ class sqlConnection():
 
     def writeMany(self, df: pd.DataFrame, tableName, schemaName, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, updateInsertedTs=False):
         self._ensure_connection()
+        schema = self._quoteIdent(schemaName)
+        table = self._quoteIdent(tableName)
+
         if not df.empty:
             
             print('Found data')
@@ -121,8 +124,6 @@ class sqlConnection():
             df[df.select_dtypes(include="bool").columns] = df.select_dtypes(include="bool").astype(int)
             df = df.where(pd.notna(df), None)
 
-            schema = self._quoteIdent(schemaName)
-            table = self._quoteIdent(tableName)
             qCols = {c: self._quoteIdent(c) for c in cols}
 
             if merge and not mergeKeys:
@@ -207,7 +208,7 @@ class sqlConnection():
                 for i in range(0, len(rows), 10000):
                     self.cursorMany.executemany(query, rows[i:i+10000])
                     self.connection.commit()
-
+        print("Committing...")
         if log:
             self.execSingle(
                 f"""
@@ -217,7 +218,6 @@ class sqlConnection():
                 """,
                 params=[tableName, entity, datetime.now().date(), len(df)]
                 )
-        print("Committing...")
         self.connection.commit()
         return
 
