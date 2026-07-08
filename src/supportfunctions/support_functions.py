@@ -112,7 +112,7 @@ class sqlConnection():
             raise ValueError(f"Invalid identifier: {name!r}")
         return "[" + name.replace("]", "]]") + "]"
 
-    def writeMany(self, df: pd.DataFrame, tableName, schemaName, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, updateInsertedTs=False):
+    def writeMany(self, df: pd.DataFrame, tableName, schemaName, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, logTableName=None, updateInsertedTs=False):
         self._ensure_connection()
         schema = self._quoteIdent(schemaName)
         table = self._quoteIdent(tableName)
@@ -159,14 +159,14 @@ class sqlConnection():
                         (tableName, date, records, insertedTimestamp)
                     VALUES (?, ?, ?, SYSDATETIMEOFFSET());
                 """,
-                params=[tableName, datetime.now().date(), len(df)]
+                params=[logTableName or tableName, datetime.now().date(), len(df)]
 
                 )
 
         self.connection.commit()
         return
 
-    def writeManyEntity(self, df: pd.DataFrame, tableName, schemaName, entity, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, entityColName='entity', updateInsertedTs=False):
+    def writeManyEntity(self, df: pd.DataFrame, tableName, schemaName, entity, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, logTableName=None, entityColName='entity', updateInsertedTs=False):
         self._ensure_connection()
         schema = self._quoteIdent(schemaName)
         table = self._quoteIdent(tableName)
@@ -216,7 +216,7 @@ class sqlConnection():
                         (tableName, {self._quoteIdent(entityColName)}, date, records, insertedTimestamp)
                     VALUES (?, ?, ?, ?, SYSDATETIMEOFFSET());
                 """,
-                params=[tableName, entity, datetime.now().date(), len(df)]
+                params=[logTableName or tableName, entity, datetime.now().date(), len(df)]
                 )
         self.connection.commit()
         return
