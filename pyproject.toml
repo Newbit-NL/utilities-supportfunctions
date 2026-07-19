@@ -1,6 +1,6 @@
 [project]
 name = "supportfunctions"
-version = "0.1.21"
+version = "0.1.22"
 description = "Shared utility functions for internal projects"
 authors = [
     { name = "Jeroen Vester", email = "jevester.work@gmail.com" }
@@ -9,11 +9,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
-    "pandas>=2.0,<3.0",
-    "numpy>=1.24,<2.0",
-    "PyYAML>=6.0,<7.0",
-    "azure-identity>=1.15,<2.0",
-    "azure-keyvault-secrets>=4.7,<5.0"
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "PyYAML>=6.0",
+    "azure-identity>=1.15",
+    "azure-keyvault-secrets>=4.7"
 ]
 
 # Build system (verplicht)
