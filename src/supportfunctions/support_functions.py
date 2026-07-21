@@ -84,9 +84,10 @@ class sqlConnection():
             self._ensure_connection()
 
             self.cursorSingle.execute(query, params or ())
-            if query.strip().lower().startswith(("select", "with")):
+            if self.cursorSingle.description is not None:
                 rows = self.cursorSingle.fetchall()
                 columns = [desc[0] for desc in self.cursorSingle.description]
+                self.connection.commit()
 
                 if return_as:
                     if return_as == "dict":
