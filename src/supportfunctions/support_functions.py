@@ -54,7 +54,7 @@ class sqlConnection():
                 return pyodbc.connect(self.connectionString)
             except Exception as e:
                 print(f"Error in sqlConnection >>>> {e}")
-                if i == 5:
+                if i == 4:
                     self.open = False
                     print(f"Fout bij het openen van de verbinding: {e}")
                     raise e
