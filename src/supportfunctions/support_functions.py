@@ -320,10 +320,9 @@ class sqlConnection():
 
 class postgresConnection():
 
-    def __init__(self, configSql, sqlUser=None, sqlPassword=None, serverLoginType: Literal["credentials", "entraId"] = "credentials"):
-        self.serverLoginType = serverLoginType
+    def __init__(self, configSql, sqlUser=None, sqlPassword=None):
         self.configSql = configSql
-        self.connectionParams = self.constructConnParams(configSql, sqlUser, sqlPassword, serverLoginType)
+        self.connectionParams = self.constructConnParams(configSql, sqlUser, sqlPassword)
         self.open = None
         self.connection = self.openConnection()
         self.cursorSingle = self.get_cursor()
@@ -332,29 +331,23 @@ class postgresConnection():
     def __str__(self):
         return f"postgresConnection(server='{self.configSql['server']}', database='{self.configSql['database']}', open={'True' if self.open else 'False'})"
 
-    def constructConnParams(self, configSql, sqlUser, sqlPassword, serverLoginType: Literal["credentials", "entraId"] = "credentials"):
+    def constructConnParams(self, configSql, sqlUser=None, sqlPassword=None):
         c = configSql
+        configType = c.get("configType", "local-dev")
+
         params = {
-            "host": c["server"],
+            "host": "localhost" if configType == "server-deployed" else c["server"],
             "port": c.get("port", 5432),
             "dbname": c["database"],
             "connect_timeout": 30,
-            "sslmode": "require" if not c.get("trust_server_certificate", False) else "verify-full",
         }
 
-        if serverLoginType == "entraId":
-            from azure.identity import DefaultAzureCredential
-            token = DefaultAzureCredential().get_token("https://ossrdbms-aad.database.windows.net/.default").token
-            params["user"] = sqlUser
-            params["password"] = token
+        if configType == "server":
             params["sslmode"] = "require"
-        elif c.get("local"):
+
+        if sqlUser:
             params["user"] = sqlUser
-            if sqlPassword:
-                params["password"] = sqlPassword
-            params.pop("sslmode")
-        else:
-            params["user"] = sqlUser
+        if sqlPassword:
             params["password"] = sqlPassword
 
         return params
