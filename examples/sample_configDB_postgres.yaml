@@ -1,0 +1,118 @@
+# Postgres-variant van sample_configDB.yaml -- zelfde sample_shop-structuur
+# (customers/products/orders), maar met Postgres-geldige types in plaats van T-SQL.
+#
+# Kolomnamen hoef je zelf niet te quoten: postgresConnection.constructDatabase()
+# quote automatisch de kolomnaam vooraan elk segment in "columns" (via
+# _quoteColumnDefs), zodat camelCase zoals "customerId" behouden blijft in plaats
+# van door Postgres naar lowercase gevouwen te worden. De TYPES moeten wel al
+# Postgres-geldig zijn -- die worden 1-op-1 doorgegeven.
+#
+# Belangrijkste verschillen met de mssql-variant:
+#   IDENTITY(1,1)        -> GENERATED ALWAYS AS IDENTITY
+#   NVARCHAR(n)           -> VARCHAR(n)
+#   BIT                   -> BOOLEAN
+#   DATETIMEOFFSET        -> TIMESTAMPTZ
+#   SYSDATETIMEOFFSET()   -> now()
+#   'clustered' bij constraints/indexes -> weggelaten (bestaat niet in Postgres;
+#     postgresConnection negeert dat veld toch al)
+
+schema:
+  name: sample_shop
+
+tables:
+  # monitor: technische logtabel(len), altijd als eerste aangemaakt/gecheckt
+  monitor:
+    - name: syncLog
+      columns: "
+        id BIGINT GENERATED ALWAYS AS IDENTITY NOT NULL,
+        tableName VARCHAR(150) NOT NULL,
+        date DATE NOT NULL,
+        records INT NOT NULL,
+        insertedTimestamp TIMESTAMPTZ NOT NULL
+        CONSTRAINT $NAME_ts DEFAULT now()
+        "
+      constraints:
+        - name: PK
+          type: PRIMARY KEY
+          columns:
+            - tableName
+            - insertedTimestamp
+
+  # meta: stamgegevens (klanten, producten, ...) -- worden vóór fact-tabellen aangemaakt
+  meta:
+    - name: customers
+      columns: "
+        customerId BIGINT,
+        customerName VARCHAR(200) NULL,
+        country VARCHAR(10) NULL,
+        insertedTimestamp TIMESTAMPTZ NOT NULL
+        CONSTRAINT $NAME_ts DEFAULT now()
+        "
+      constraints:
+        - name: PK
+          type: PRIMARY KEY
+          columns:
+            - customerId
+
+    - name: products
+      columns: "
+        productId BIGINT,
+        productName VARCHAR(200) NULL,
+        category VARCHAR(100) NULL,
+        insertedTimestamp TIMESTAMPTZ NOT NULL
+        CONSTRAINT $NAME_ts DEFAULT now()
+        "
+      constraints:
+        - name: PK
+          type: PRIMARY KEY
+          columns:
+            - productId
+
+  # fact: transactionele/meetdata, meestal met FK's naar meta-tabellen
+  fact:
+    - name: orders
+      columns: "
+        orderId BIGINT,
+        customerId BIGINT NOT NULL,
+        productId BIGINT NOT NULL,
+        orderDate DATE NOT NULL,
+        quantity INT NULL,
+        amount DECIMAL(18,2) NULL,
+        insertedTimestamp TIMESTAMPTZ NOT NULL
+        CONSTRAINT $NAME_ts DEFAULT now()
+        "
+      constraints:
+        - name: PK
+          type: PRIMARY KEY
+          columns:
+            - orderId
+
+      # constraints, indexes en foreignKeys zijn alle drie optioneel per tabel (mag ontbreken
+      # of een lege lijst zijn) -- alleen "columns" (de ruwe CREATE TABLE-body) is verplicht.
+      indexes:
+        - name: IX_customerDate
+          columns:
+            - customerId
+            - orderDate
+          includes:
+            - amount
+
+      # foreignKeys: hiermee worden na het aanmaken van alle nieuwe tabellen
+      # ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY statements uitgevoerd.
+      # Constraintnaam wordt {tableName}_{name}.
+      foreignKeys:
+        - name: customer
+          columns:
+            - customerId
+          refTable: customers
+          refColumns:
+            - customerId
+          onDelete: NO ACTION
+
+        - name: product
+          columns:
+            - productId
+          refTable: products
+          refColumns:
+            - productId
+          onDelete: NO ACTION
