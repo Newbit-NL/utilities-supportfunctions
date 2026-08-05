@@ -1,0 +1,117 @@
+# Voorbeeldtemplate voor sqlConnection.constructDatabase() / postgresConnection.constructDatabase()
+#
+# Dit is een minimale, verzonnen dataset (geen echte klantdata) die laat zien welke
+# secties het template ondersteunt: monitor/meta/fact-tabellen, constraints, indexes
+# (incl. INCLUDE-kolommen) en foreignKeys. Kopieer dit bestand als startpunt voor een
+# eigen project-yaml (die je meestal gitignored houdt, zie linkedin_paid.yaml).
+#
+# Kolomdefinities ($NAME wordt vervangen door de tabelnaam, handig voor default-constraint-namen)
+# worden als T-SQL geschreven; postgresConnection gebruikt dezelfde yaml, dus gebruik
+# alleen syntax die op beide platforms werkt (of onderhoud een aparte yaml per db-type
+# als de kolomtypes echt uiteenlopen).
+
+schema:
+  name: sample_shop
+
+tables:
+  # monitor: technische logtabel(len), altijd als eerste aangemaakt/gecheckt
+  monitor:
+    - name: syncLog
+      columns: "
+        [id] BIGINT IDENTITY(1,1) NOT NULL,
+        [tableName] NVARCHAR(150) NOT NULL,
+        [date] DATE NOT NULL,
+        [records] INT NOT NULL,
+        [insertedTimestamp] DATETIMEOFFSET NOT NULL
+        CONSTRAINT $NAME_ts DEFAULT SYSDATETIMEOFFSET()
+        "
+      constraints:
+        - name: PK
+          type: PRIMARY KEY
+          clustered: true
+          columns:
+            - tableName
+            - insertedTimestamp
+
+  # meta: stamgegevens (klanten, producten, ...) -- worden vóór fact-tabellen aangemaakt
+  meta:
+    - name: customers
+      columns: "
+        customerId BIGINT,
+        customerName NVARCHAR(200) NULL,
+        country NVARCHAR(10) NULL,
+        insertedTimestamp DATETIMEOFFSET NOT NULL
+        CONSTRAINT $NAME_ts DEFAULT SYSDATETIMEOFFSET()
+        "
+      constraints:
+        - name: PK
+          type: PRIMARY KEY
+          clustered: true
+          columns:
+            - customerId
+
+    - name: products
+      columns: "
+        productId BIGINT,
+        productName NVARCHAR(200) NULL,
+        category NVARCHAR(100) NULL,
+        insertedTimestamp DATETIMEOFFSET NOT NULL
+        CONSTRAINT $NAME_ts DEFAULT SYSDATETIMEOFFSET()
+        "
+      constraints:
+        - name: PK
+          type: PRIMARY KEY
+          clustered: true
+          columns:
+            - productId
+
+  # fact: transactionele/meetdata, meestal met FK's naar meta-tabellen
+  fact:
+    - name: orders
+      columns: "
+        orderId BIGINT,
+        customerId BIGINT NOT NULL,
+        productId BIGINT NOT NULL,
+        orderDate DATE NOT NULL,
+        quantity INT NULL,
+        amount DECIMAL(18,2) NULL,
+        insertedTimestamp DATETIMEOFFSET NOT NULL
+        CONSTRAINT $NAME_ts DEFAULT SYSDATETIMEOFFSET()
+        "
+      constraints:
+        - name: PK
+          type: PRIMARY KEY
+          clustered: true
+          columns:
+            - orderId
+
+      # constraints, indexes en foreignKeys zijn alle drie optioneel per tabel (mag ontbreken
+      # of een lege lijst zijn) -- alleen "columns" (de ruwe CREATE TABLE-body) is verplicht.
+      indexes:
+        - name: IX_customerDate
+          clustered: false
+          columns:
+            - customerId
+            - orderDate
+          includes:
+            - amount
+
+      # foreignKeys: hiermee worden na het aanmaken van alle nieuwe tabellen
+      # ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY statements uitgevoerd.
+      # Constraintnaam wordt {tableName}_{name}.
+      foreignKeys:
+        - name: customer
+          columns:
+            - customerId
+          refTable: customers
+          refColumns:
+            - customerId
+          onDelete: NO ACTION
+
+        - name: product
+          columns:
+            - productId
+          refTable: products
+          refColumns:
+            - productId
+          onDelete: NO ACTION

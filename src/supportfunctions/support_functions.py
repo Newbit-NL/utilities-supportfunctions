@@ -299,6 +299,23 @@ class sqlConnection():
                 includeClause = 'INCLUDE (' + ','.join(self._quoteIdent(c) for c in index['includes']) + ')' if index.get('includes', []) else ''
                 self.execSingle(f"CREATE {'CLUSTERED' if index['clustered'] else 'NONCLUSTERED'} INDEX {qIndexName} ON {qSchema}.{qTable} ({qIndexCols}) {includeClause}")
 
+        # Foreign keys worden pas gelegd nadat alle (nieuwe) tabellen bestaan, zodat de volgorde in het template er niet toe doet.
+        for table in tables:
+            qTable = self._quoteIdent(table['name'])
+            for fk in table.get('foreignKeys', []):
+                qFkName = self._quoteIdent(f"{table['name']}_{fk['name']}")
+                qFkCols = ', '.join(self._quoteIdent(c) for c in fk['columns'])
+                qRefSchema = self._quoteIdent(fk.get('refSchema', schemaName))
+                qRefTable = self._quoteIdent(fk['refTable'])
+                qRefCols = ', '.join(self._quoteIdent(c) for c in fk['refColumns'])
+                onDelete = f" ON DELETE {fk['onDelete']}" if fk.get('onDelete') else ''
+                onUpdate = f" ON UPDATE {fk['onUpdate']}" if fk.get('onUpdate') else ''
+                self.execSingle(
+                    f"ALTER TABLE {qSchema}.{qTable} ADD CONSTRAINT {qFkName} "
+                    f"FOREIGN KEY ({qFkCols}) REFERENCES {qRefSchema}.{qRefTable} ({qRefCols})"
+                    f"{onDelete}{onUpdate}"
+                )
+
 
 class postgresConnection():
 
@@ -351,7 +368,7 @@ class postgresConnection():
                 return psycopg2.connect(**self.connectionParams)
             except Exception as e:
                 print(f"Error in postgresConnection >>>> {e}")
-                if i == 5:
+                if i == 4:
                     self.open = False
                     print(f"Fout bij het openen van de verbinding: {e}")
                     raise e
@@ -376,9 +393,10 @@ class postgresConnection():
             self._ensure_connection()
 
             self.cursorSingle.execute(query, params or ())
-            if query.strip().lower().startswith(("select", "with")):
+            if self.cursorSingle.description is not None:
                 rows = self.cursorSingle.fetchall()
                 columns = [desc[0] for desc in self.cursorSingle.description]
+                self.connection.commit()
 
                 if return_as:
                     if return_as == "dict":
@@ -585,7 +603,25 @@ class postgresConnection():
             for index in table.get('indexes', []):
                 qIndexName = self._quoteIdent(f"{table['name']}_{index['name']}")
                 qIndexCols = ', '.join(self._quoteIdent(c) for c in index['columns'])
-                self.execSingle(f"CREATE INDEX {qIndexName} ON {qSchema}.{qTable} ({qIndexCols})")
+                includeClause = 'INCLUDE (' + ','.join(self._quoteIdent(c) for c in index['includes']) + ')' if index.get('includes', []) else ''
+                self.execSingle(f"CREATE INDEX {qIndexName} ON {qSchema}.{qTable} ({qIndexCols}) {includeClause}")
+
+        # Foreign keys worden pas gelegd nadat alle (nieuwe) tabellen bestaan, zodat de volgorde in het template er niet toe doet.
+        for table in tables:
+            qTable = self._quoteIdent(table['name'])
+            for fk in table.get('foreignKeys', []):
+                qFkName = self._quoteIdent(f"{table['name']}_{fk['name']}")
+                qFkCols = ', '.join(self._quoteIdent(c) for c in fk['columns'])
+                qRefSchema = self._quoteIdent(fk.get('refSchema', schemaName))
+                qRefTable = self._quoteIdent(fk['refTable'])
+                qRefCols = ', '.join(self._quoteIdent(c) for c in fk['refColumns'])
+                onDelete = f" ON DELETE {fk['onDelete']}" if fk.get('onDelete') else ''
+                onUpdate = f" ON UPDATE {fk['onUpdate']}" if fk.get('onUpdate') else ''
+                self.execSingle(
+                    f"ALTER TABLE {qSchema}.{qTable} ADD CONSTRAINT {qFkName} "
+                    f"FOREIGN KEY ({qFkCols}) REFERENCES {qRefSchema}.{qRefTable} ({qRefCols})"
+                    f"{onDelete}{onUpdate}"
+                )
 
 
 class secrets():
