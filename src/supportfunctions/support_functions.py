@@ -350,6 +350,8 @@ class postgresConnection():
             params["sslmode"] = "require"
         elif c.get("local"):
             params["user"] = sqlUser
+            if sqlPassword:
+                params["password"] = sqlPassword
             params.pop("sslmode")
         else:
             params["user"] = sqlUser
