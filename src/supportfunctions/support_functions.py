@@ -1,4 +1,5 @@
 # import requests
+import re
 from datetime import datetime
 from time import sleep
 from typing import Literal
@@ -422,6 +423,44 @@ class postgresConnection():
             raise ValueError(f"Invalid identifier: {name!r}")
         return '"' + name.replace('"', '""') + '"'
 
+    @staticmethod
+    def _splitTopLevel(text: str) -> list:
+        parts = []
+        depth = 0
+        current = []
+        for ch in text:
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            if ch == ',' and depth == 0:
+                parts.append(''.join(current))
+                current = []
+            else:
+                current.append(ch)
+        parts.append(''.join(current))
+        return parts
+
+    def _quoteColumnDefs(self, rawColumns: str) -> str:
+        """Quote de kolomnaam vooraan elke top-level CREATE TABLE-segment, zodat camelCase
+        behouden blijft in Postgres (dat unquoted identifiers naar lowercase vouwt). Segmenten
+        die beginnen met CONSTRAINT (table-level constraints) worden ongemoeid gelaten."""
+        segments = self._splitTopLevel(rawColumns)
+        quoted = []
+        for segment in segments:
+            stripped = segment.strip()
+            if not stripped or stripped.upper().startswith("CONSTRAINT"):
+                quoted.append(segment)
+                continue
+            match = re.match(r'^(\s*)(\[[^\]]+\]|"[^"]+"|\S+)(.*)$', segment, re.DOTALL)
+            if not match:
+                quoted.append(segment)
+                continue
+            leading, ident, rest = match.groups()
+            ident = ident.strip('[]"')
+            quoted.append(f"{leading}{self._quoteIdent(ident)}{rest}")
+        return ','.join(quoted)
+
     def writeMany(self, df: pd.DataFrame, tableName, schemaName, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, logTableName=None, updateInsertedTs=False):
         from psycopg2.extras import execute_values
 
@@ -595,9 +634,10 @@ class postgresConnection():
                 qConstraintCols = ', '.join(self._quoteIdent(c) for c in constraint['columns'])
                 constraints.append(f"CONSTRAINT {qConstraintName} {constraint['type']} ({qConstraintCols})")
 
+            columnDefs = self._quoteColumnDefs(table['columns'].replace('$NAME', table['name']))
             self.execSingle(
                 f"""CREATE TABLE {qSchema}.{qTable}"""
-                f"""({table['columns'].replace('$NAME', table['name'])}{(','+','.join(constraints)) if len(constraints) > 0 else ''})"""
+                f"""({columnDefs}{(','+','.join(constraints)) if len(constraints) > 0 else ''})"""
                 )
 
             for index in table.get('indexes', []):

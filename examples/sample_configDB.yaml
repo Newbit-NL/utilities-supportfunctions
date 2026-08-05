@@ -1,4 +1,5 @@
-# Voorbeeldtemplate voor sqlConnection.constructDatabase() / postgresConnection.constructDatabase()
+# Voorbeeldtemplate voor sqlConnection.constructDatabase() (SQL Server / T-SQL).
+# Zie sample_configDB_postgres.yaml voor dezelfde structuur met Postgres-geldige types.
 #
 # Dit is een minimale, verzonnen dataset (geen echte klantdata) die laat zien welke
 # secties het template ondersteunt: monitor/meta/fact-tabellen, constraints, indexes
@@ -6,9 +7,9 @@
 # eigen project-yaml (die je meestal gitignored houdt, zie linkedin_paid.yaml).
 #
 # Kolomdefinities ($NAME wordt vervangen door de tabelnaam, handig voor default-constraint-namen)
-# worden als T-SQL geschreven; postgresConnection gebruikt dezelfde yaml, dus gebruik
-# alleen syntax die op beide platforms werkt (of onderhoud een aparte yaml per db-type
-# als de kolomtypes echt uiteenlopen).
+# worden hier als T-SQL geschreven. postgresConnection kan niet met dit bestand overweg
+# (NVARCHAR/BIT/DATETIMEOFFSET/IDENTITY/SYSDATETIMEOFFSET() bestaan niet in Postgres) --
+# gebruik daarvoor de aparte sample_configDB_postgres.yaml.
 
 schema:
   name: sample_shop
