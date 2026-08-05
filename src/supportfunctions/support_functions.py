@@ -467,7 +467,8 @@ class postgresConnection():
 
             print('Found data')
             cols = df.columns.to_list()
-            df[df.select_dtypes(include="bool").columns] = df.select_dtypes(include="bool").astype(int)
+            boolCols = df.select_dtypes(include="bool").columns
+            df[boolCols] = df[boolCols].astype(object)  # numpy.bool_ -> Python bool, want psycopg2 kan geen int in een boolean-kolom schrijven
             df = df.where(pd.notna(df), None)
 
             qCols = {c: self._quoteIdent(c) for c in cols}
@@ -523,7 +524,8 @@ class postgresConnection():
 
             print('Found data')
             cols = df.columns.to_list()
-            df[df.select_dtypes(include="bool").columns] = df.select_dtypes(include="bool").astype(int)
+            boolCols = df.select_dtypes(include="bool").columns
+            df[boolCols] = df[boolCols].astype(object)  # numpy.bool_ -> Python bool, want psycopg2 kan geen int in een boolean-kolom schrijven
             df = df.where(pd.notna(df), None)
 
             qCols = {c: self._quoteIdent(c) for c in cols}
@@ -571,16 +573,21 @@ class postgresConnection():
         for _, row in df.iterrows():
             d = []
             for col in df.columns.tolist():
-                if df[col].dtype == 'object':
-                    if str(row[col]) == 'None':
+                value = row[col]
+                if isinstance(value, (bool, np.bool_)):
+                    # eigen tak nodig: anders komt een bool via de 'object'-tak als de tekst 'True'/'False'
+                    # binnen, en dat kan psycopg2 niet naar een boolean-kolom schrijven
+                    d.append(bool(value) if pd.notna(value) else None)
+                elif df[col].dtype == 'object':
+                    if str(value) == 'None':
                         d.append(None)
                     else:
-                        d.append(str(row[col]))
+                        d.append(str(value))
                 else:
-                    if pd.isna(row[col]) or row[col] == np.nan:
+                    if pd.isna(value) or value == np.nan:
                         d.append(None)
                     else:
-                        d.append(row[col])
+                        d.append(value)
             data.append(d)
         return data
 
