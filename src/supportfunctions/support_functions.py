@@ -478,6 +478,15 @@ class postgresConnection():
 
             rows = [tuple(r) for r in self.parseValues(df)]
 
+            if merge:
+                # ON CONFLICT DO UPDATE mag dezelfde doelrij niet twee keer in één statement raken;
+                # net als de row-by-row MERGE bij mssql wint de laatste rij per mergeKeys-combinatie
+                keyIdx = [cols.index(c) for c in mergeKeys]
+                deduped = {}
+                for r in rows:
+                    deduped[tuple(r[i] for i in keyIdx)] = r
+                rows = list(deduped.values())
+
             if not merge:
                 self.execSingle(f"TRUNCATE TABLE {schema}.{table}")
                 execute_values(
@@ -491,7 +500,7 @@ class postgresConnection():
                 updateCols = [c for c in cols if c not in mergeKeys]
                 setClause = ', '.join(f"{qCols[c]} = EXCLUDED.{qCols[c]}" for c in updateCols)
                 if updateInsertedTs:
-                    setClause += ", insertedTimestamp = now()"
+                    setClause += f", {self._quoteIdent('insertedTimestamp')} = now()"
                 query = (
                     f"INSERT INTO {schema}.{table} ({', '.join(qCols[c] for c in cols)}) VALUES %s "
                     f"ON CONFLICT ({', '.join(qCols[c] for c in mergeKeys)}) DO UPDATE SET {setClause}"
@@ -535,6 +544,15 @@ class postgresConnection():
 
             rows = [tuple(r) for r in self.parseValues(df)]
 
+            if merge:
+                # ON CONFLICT DO UPDATE mag dezelfde doelrij niet twee keer in één statement raken;
+                # net als de row-by-row MERGE bij mssql wint de laatste rij per mergeKeys-combinatie
+                keyIdx = [cols.index(c) for c in mergeKeys]
+                deduped = {}
+                for r in rows:
+                    deduped[tuple(r[i] for i in keyIdx)] = r
+                rows = list(deduped.values())
+
             if not merge:
                 self.execSingle(f"DELETE FROM {schema}.{table} WHERE {self._quoteIdent(entityColName)} = %s", params=[entity])
                 execute_values(
@@ -548,7 +566,7 @@ class postgresConnection():
                 updateCols = [c for c in cols if c not in mergeKeys]
                 setClause = ', '.join(f"{qCols[c]} = EXCLUDED.{qCols[c]}" for c in updateCols)
                 if updateInsertedTs:
-                    setClause += ", insertedTimestamp = now()"
+                    setClause += f", {self._quoteIdent('insertedTimestamp')} = now()"
                 query = (
                     f"INSERT INTO {schema}.{table} ({', '.join(qCols[c] for c in cols)}) VALUES %s "
                     f"ON CONFLICT ({', '.join(qCols[c] for c in mergeKeys)}) DO UPDATE SET {setClause}"
