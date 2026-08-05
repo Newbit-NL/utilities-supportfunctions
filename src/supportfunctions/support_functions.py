@@ -503,7 +503,7 @@ class postgresConnection():
             self.execSingle(
                 f"""
                     INSERT INTO {schema}.{self._quoteIdent(syncTableName)}
-                        (tableName, date, records, insertedTimestamp)
+                        ({self._quoteIdent('tableName')}, date, records, {self._quoteIdent('insertedTimestamp')})
                     VALUES (%s, %s, %s, now());
                 """,
                 params=[logTableName or tableName, datetime.now().date(), len(df)]
@@ -560,7 +560,7 @@ class postgresConnection():
             self.execSingle(
                 f"""
                     INSERT INTO {schema}.{self._quoteIdent(syncTableName)}
-                        (tableName, {self._quoteIdent(entityColName)}, date, records, insertedTimestamp)
+                        ({self._quoteIdent('tableName')}, {self._quoteIdent(entityColName)}, date, records, {self._quoteIdent('insertedTimestamp')})
                     VALUES (%s, %s, %s, %s, now());
                 """,
                 params=[logTableName or tableName, entity, datetime.now().date(), len(df)]
