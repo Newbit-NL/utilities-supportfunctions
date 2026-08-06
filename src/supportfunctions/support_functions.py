@@ -333,18 +333,19 @@ class postgresConnection():
 
     def constructConnParams(self, configSql, sqlUser=None, sqlPassword=None):
         c = configSql
-        configType = c.get("configType", "local-dev")
+        configType = c.get("configType", "local-dev-local")
+        # server-depl-server, local-dev-local, local-dev-server
 
         params = {
-            "host": "localhost" if configType == "server-deployed" else c["server"],
+            "host": "localhost" if configType in ["server-depl-server", 'local-dev-local'] else c["server"],
             "port": c.get("port", 5432),
             "dbname": c["database"],
             "connect_timeout": 30,
         }
 
-        if configType == "server":
-            params["sslmode"] = "require"
 
+        if configType in ["server-depl-server", 'local-dev-server']:
+            params["sslmode"] = "require"
         if sqlUser:
             params["user"] = sqlUser
         if sqlPassword:
