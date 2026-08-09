@@ -229,7 +229,7 @@ class sqlConnection():
             d = []
             for col in df.columns.tolist():
                 if df[col].dtype == 'object':
-                    if str(row[col]) == 'None':
+                    if pd.isna(row[col]):
                         d.append(None)
                     else:
                         d.append(str(row[col]))
@@ -598,7 +598,7 @@ class postgresConnection():
                     # binnen, en dat kan psycopg2 niet naar een boolean-kolom schrijven
                     d.append(bool(value) if pd.notna(value) else None)
                 elif df[col].dtype == 'object':
-                    if str(value) == 'None':
+                    if pd.isna(value):
                         d.append(None)
                     else:
                         d.append(str(value))
