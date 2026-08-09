@@ -11,6 +11,14 @@ import yaml
 
 #init_check checked of de check table al bestaat. Zo nee, dan maakt hij alle benodigde tabellen aan, het schema, etc.
 
+def _isNa(value):
+    # pd.isna() raises ValueError on array-like values (list/tuple/dict/ndarray) because
+    # it returns an element-wise array instead of a single bool; such values are never "missing"
+    if isinstance(value, (list, tuple, set, dict, np.ndarray)):
+        return False
+    return pd.isna(value)
+
+
 class sqlConnection():
 
     def __init__(self, configSql, sqlUser=None, sqlPassword=None, serverLoginType: Literal["credentials", "entraId"] = "credentials"):
@@ -229,12 +237,12 @@ class sqlConnection():
             d = []
             for col in df.columns.tolist():
                 if df[col].dtype == 'object':
-                    if pd.isna(row[col]):
+                    if _isNa(row[col]):
                         d.append(None)
                     else:
                         d.append(str(row[col]))
                 else:
-                    if pd.isna(row[col]) or row[col] == np.nan:
+                    if _isNa(row[col]):
                         d.append(None)
                     else:
                         d.append(row[col])
@@ -596,14 +604,14 @@ class postgresConnection():
                 if isinstance(value, (bool, np.bool_)):
                     # eigen tak nodig: anders komt een bool via de 'object'-tak als de tekst 'True'/'False'
                     # binnen, en dat kan psycopg2 niet naar een boolean-kolom schrijven
-                    d.append(bool(value) if pd.notna(value) else None)
+                    d.append(bool(value) if not _isNa(value) else None)
                 elif df[col].dtype == 'object':
-                    if pd.isna(value):
+                    if _isNa(value):
                         d.append(None)
                     else:
                         d.append(str(value))
                 else:
-                    if pd.isna(value) or value == np.nan:
+                    if _isNa(value):
                         d.append(None)
                     else:
                         d.append(value)
