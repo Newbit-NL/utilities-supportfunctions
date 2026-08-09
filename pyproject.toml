@@ -1,6 +1,6 @@
 [project]
 name = "supportfunctions"
-version = "0.1.32"
+version = "0.1.33"
 description = "Shared utility functions for internal projects"
 authors = [
     { name = "Jeroen Vester", email = "jevester.work@gmail.com" }
