@@ -306,7 +306,7 @@ class sqlConnection():
                 qIndexName = self._quoteIdent(f"{table['name']}_{index['name']}")
                 qIndexCols = ', '.join(self._quoteIdent(c) for c in index['columns'])
                 includeClause = 'INCLUDE (' + ','.join(self._quoteIdent(c) for c in index['includes']) + ')' if index.get('includes', []) else ''
-                self.execSingle(f"CREATE {'CLUSTERED' if index['clustered'] else 'NONCLUSTERED'} INDEX {qIndexName} ON {qSchema}.{qTable} ({qIndexCols}) {includeClause}")
+                self.execSingle(f"CREATE {'CLUSTERED' if index.get('clustered', False) else 'NONCLUSTERED'} INDEX {qIndexName} ON {qSchema}.{qTable} ({qIndexCols}) {includeClause}")
 
         # Foreign keys worden pas gelegd nadat alle (nieuwe) tabellen bestaan, zodat de volgorde in het template er niet toe doet.
         for table in tables:
