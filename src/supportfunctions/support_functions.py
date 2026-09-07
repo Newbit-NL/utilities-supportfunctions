@@ -19,6 +19,35 @@ def _isNa(value):
     return pd.isna(value)
 
 
+_PRINT2_STYLES: dict[int, str] = {
+    0: '{text}',
+    1: '\n# {text}',
+    2: '\t-{text}',
+    3: '\t\t-> {text}',
+    4: '# {text}',
+}
+
+
+def print2(style: int, text: str = '') -> None:
+    """Print text with a predefined visual style, for readable script/log output.
+
+    Args:
+        style: Selected style. 0: plain, 1: section header (blank line + '# '),
+            2: bullet ('\\t-'), 3: sub-bullet ('\\t\\t-> '), 4: inline header ('# ').
+        text: Text to print. Defaults to ''.
+
+    Raises:
+        ValueError: If style is not one of the supported style codes.
+    """
+    try:
+        template = _PRINT2_STYLES[style]
+    except KeyError:
+        raise ValueError(
+            f"print2: invalid style {style!r}, expected one of {sorted(_PRINT2_STYLES)}"
+        ) from None
+    print(template.format(text=text))
+
+
 class sqlConnection():
 
     def __init__(self, configSql, sqlUser=None, sqlPassword=None, serverLoginType: Literal["credentials", "entraId"] = "credentials"):
