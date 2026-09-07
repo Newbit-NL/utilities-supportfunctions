@@ -1,4 +1,5 @@
 # import requests
+import os
 import re
 from datetime import datetime
 from time import sleep
@@ -19,33 +20,113 @@ def _isNa(value):
     return pd.isna(value)
 
 
-_PRINT2_STYLES: dict[int, str] = {
-    0: '{text}',
-    1: '\n# {text}',
-    2: '\t-{text}',
-    3: '\t\t-> {text}',
-    4: '# {text}',
-}
+class print2():
+    """Styled printer that keeps an in-memory log of everything it prints.
 
+    The style codes let you build up multi-level structured output (headers with
+    nested bullets and results) without hand-formatting indentation each time. Example::
 
-def print2(style: int, text: str = '') -> None:
-    """Print text with a predefined visual style, for readable script/log output.
+        p = print2()
+        p.print(1, "Step 1: extract")           # top-level header
+        p.print(2, "reading source table")      # level 1 bullet under it
+        p.print(3, "42 rows fetched")            # level 1 result under that bullet
+        p.print(5, "Step 1a: validation")        # level 2 header (sub-section)
+        p.print(7, "checking nulls")             # level 2 bullet under it
+        p.print(9, "no nulls found")             # level 2 result under that bullet
+        p.print(10)                              # divider
 
-    Args:
-        style: Selected style. 0: plain, 1: section header (blank line + '# '),
-            2: bullet ('\\t-'), 3: sub-bullet ('\\t\\t-> '), 4: inline header ('# ').
-        text: Text to print. Defaults to ''.
+    prints::
 
-    Raises:
-        ValueError: If style is not one of the supported style codes.
+        # Step 1: extract
+        \t-reading source table
+        \t\t-> 42 rows fetched
+
+        ## Step 1a: validation
+        \t\t-checking nulls
+        \t\t\t-> no nulls found
+        ------------------------------------------------------------
+
+    Style reference (style code -> layout, typical use):
+        0  - plain text, no prefix                                 freeform output
+        1  - level 1 header:   blank line + "# "                   top-level step/section
+        2  - level 1 bullet:   "\\t-"                                item under a level 1 header
+        3  - level 1 result:   "\\t\\t-> "                            outcome of a level 1 bullet
+        4  - inline header:    "# " (no blank line)                header right after another line
+        5  - level 2 header:   blank line + "## "                  sub-section under a level 1 header
+        6  - level 3 header:   blank line + "### "                 sub-section under a level 2 header
+        7  - level 2 bullet:   "\\t\\t-"                             item under a level 2 header
+        8  - level 3 bullet:   "\\t\\t\\t-"                            item under a level 2 bullet
+        9  - level 2 result:   "\\t\\t\\t-> "                          outcome of a level 2/3 bullet
+        10 - divider:          "-" * 60 (text is ignored)          visual separator between sections
+
+    Each call to `print()` writes to stdout with the selected style and appends the
+    resulting line to an in-memory log, which can later be flushed to a .txt file via
+    `saveLog`. `saveLog` clears the log automatically once it has been written, so the
+    in-memory log only ever holds lines printed since the last save (or since `clearLog`).
     """
-    try:
-        template = _PRINT2_STYLES[style]
-    except KeyError:
-        raise ValueError(
-            f"print2: invalid style {style!r}, expected one of {sorted(_PRINT2_STYLES)}"
-        ) from None
-    print(template.format(text=text))
+
+    _STYLES: dict[int, str] = {
+        0: '{text}',
+        1: '\n# {text}',
+        2: '\t-{text}',
+        3: '\t\t-> {text}',
+        4: '# {text}',
+        5: '\n## {text}',
+        6: '\n### {text}',
+        7: '\t\t-{text}',
+        8: '\t\t\t-{text}',
+        9: '\t\t\t-> {text}',
+        10: '-' * 60,
+    }
+
+    def __init__(self):
+        self._memory: list[str] = []
+
+    def print(self, style: int, text: str = '') -> None:
+        """Print text with a predefined visual style and log it in memory.
+
+        See the class docstring for the full style reference table (styles 0-10),
+        covering plain text, three levels of headers/bullets/results, and a divider.
+
+        Args:
+            style: Selected style code (0-10).
+            text: Text to print. Defaults to ''. Ignored for style 10 (divider).
+
+        Raises:
+            ValueError: If style is not one of the supported style codes.
+        """
+        try:
+            template = self._STYLES[style]
+        except KeyError:
+            raise ValueError(
+                f"print2.print: invalid style {style!r}, expected one of {sorted(self._STYLES)}"
+            ) from None
+        line = template.format(text=text)
+        print(line)
+        self._memory.append(line)
+
+    def clearLog(self) -> None:
+        """Discard the in-memory log without saving it."""
+        self._memory = []
+
+    def saveLog(self, path: str, filename: str) -> str:
+        """Write the in-memory log to a .txt file, then clear the in-memory log.
+
+        Args:
+            path: Directory to save the log file in. Created if it doesn't exist.
+            filename: File name for the log, with or without a '.txt' extension.
+
+        Returns:
+            The full path of the written log file.
+        """
+        os.makedirs(path, exist_ok=True)
+        if not filename.lower().endswith('.txt'):
+            filename += '.txt'
+        fullPath = os.path.join(path, filename)
+        with open(fullPath, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(self._memory))
+        self.clearLog()
+        return fullPath
 
 
 class sqlConnection():
