@@ -354,6 +354,10 @@ class sqlConnection():
                 else:
                     if _isNa(row[col]):
                         d.append(None)
+                    elif isinstance(row[col], np.integer):
+                        d.append(int(row[col]))
+                    elif isinstance(row[col], np.floating):
+                        d.append(float(row[col]))
                     else:
                         d.append(row[col])
             data.append(d)
@@ -723,6 +727,11 @@ class postgresConnection():
                 else:
                     if _isNa(value):
                         d.append(None)
+                    elif isinstance(value, np.integer):
+                        # numpy.int64 heeft geen psycopg2-adapter; alleen zichtbaar als de rij puur integer is
+                        d.append(int(value))
+                    elif isinstance(value, np.floating):
+                        d.append(float(value))
                     else:
                         d.append(value)
             data.append(d)
