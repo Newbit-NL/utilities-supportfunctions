@@ -52,6 +52,11 @@ pip install -e /path/to/utilities-supportfunctions
   row-by-row `MERGE` statement; Postgres uses `INSERT ... ON CONFLICT DO UPDATE` with `execute_values`,
   and de-duplicates rows by `mergeKeys` first since Postgres errors if the same target row is touched
   twice in one `ON CONFLICT` statement.
+- **`_ensure_connection`** runs before each `execSingle`/`writeMany`/`writeManyEntity`. In
+  `postgresConnection` it rolls back an aborted transaction and reconnects a closed connection, but only
+  sends `SELECT 1` after `_PING_AFTER_SECONDS` of inactivity, so a connection dropped within that window
+  raises `OperationalError` once and recovers on the next call. Writes are deliberately not retried.
+  `sqlConnection` still pings before every call.
 - **`parseValues`**: converts a DataFrame into a list of row-tuples suitable for the DB driver, handling
   NaN/None -> `NULL` conversion and per-column dtype coercion (notably booleans, which need their own
   branch so they aren't written as the string `"True"/"False"`). Uses the module-level `_isNa()` helper

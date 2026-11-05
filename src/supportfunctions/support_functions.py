@@ -2,7 +2,7 @@
 import os
 import re
 from datetime import datetime
-from time import sleep
+from time import monotonic, sleep
 from typing import Literal
 
 import pandas as pd
@@ -11,6 +11,9 @@ import yaml
 
 
 #init_check checked of de check table al bestaat. Zo nee, dan maakt hij alle benodigde tabellen aan, het schema, etc.
+
+# Moet ruim onder de tijd liggen waarna de server of een firewall een stille verbinding verbreekt
+_PING_AFTER_SECONDS = 30
 
 def _isNa(value):
     # pd.isna() raises ValueError on array-like values (list/tuple/dict/ndarray) because
@@ -51,7 +54,7 @@ class print2():
         1  - level 1 header:   blank line + "# "                   top-level step/section
         2  - level 1 bullet:   "\\t-"                                item under a level 1 header
         3  - level 1 result:   "\\t\\t-> "                            outcome of a level 1 bullet
-        4  - inline header:    "# " (no blank line)                header right after another line
+        4  - inline header:    "\\t# " (no blank line)             indented header right after another line
         5  - level 2 header:   blank line + "## "                  sub-section under a level 1 header
         6  - level 3 header:   blank line + "### "                 sub-section under a level 2 header
         7  - level 2 bullet:   "\\t\\t-"                             item under a level 2 header
@@ -70,7 +73,7 @@ class print2():
         1: '\n# {text}',
         2: '\t-{text}',
         3: '\t\t-> {text}',
-        4: '# {text}',
+        4: '\t# {text}',
         5: '\n## {text}',
         6: '\n### {text}',
         7: '\t\t-{text}',
@@ -449,6 +452,7 @@ class postgresConnection():
         self.connection = self.openConnection()
         self.cursorSingle = self.get_cursor()
         self.cursorMany = self.get_cursor(fast=True)
+        self._lastUsed = monotonic()
 
     def __str__(self):
         return f"postgresConnection(server='{self.configSql['server']}', database='{self.configSql['database']}', open={'True' if self.open else 'False'})"
@@ -498,15 +502,50 @@ class postgresConnection():
     def get_cursor(self, fast=False):
         return self.connection.cursor()
 
-    def _ensure_connection(self):
+    def _commit(self):
+        self.connection.commit()
+        self._lastUsed = monotonic()
+
+    def _reconnect(self):
+        print("Herstellen verbinding met Postgres server")
         try:
+            self.connection.close()  # anders houdt de oude verbinding een plek in max_connections bezet
+        except Exception:
+            pass
+        self.connection = self.openConnection()
+        self.cursorSingle = self.get_cursor()
+        self.cursorMany = self.get_cursor(fast=True)
+        self._lastUsed = monotonic()
+
+    def _ensure_connection(self):
+        """Herstel een afgebroken transactie of verbroken verbinding, en ping alleen als de
+        verbinding langer dan _PING_AFTER_SECONDS stil lag (een ping kost een round-trip per query)."""
+        from psycopg2 import extensions as pgExt
+
+        if self.connection is None or self.connection.closed:
+            self._reconnect()
+            return
+
+        try:
+            status = self.connection.get_transaction_status()
+            if status == pgExt.TRANSACTION_STATUS_UNKNOWN:
+                self._reconnect()
+                return
+            if status == pgExt.TRANSACTION_STATUS_INERROR:
+                self.connection.rollback()
+                status = pgExt.TRANSACTION_STATUS_IDLE
+
+            if monotonic() - self._lastUsed < _PING_AFTER_SECONDS:
+                return
+
             self.cursorSingle.execute("SELECT 1")
             self.cursorSingle.fetchone()
+            if status == pgExt.TRANSACTION_STATUS_IDLE:
+                # alleen de transactie van de ping zelf afsluiten, niet ongecommit werk van de aanroeper
+                self.connection.rollback()
+            self._lastUsed = monotonic()
         except Exception:
-            print("Herstellen verbinding met Postgres server")
-            self.connection = self.openConnection()
-            self.cursorSingle = self.get_cursor()
-            self.cursorMany = self.get_cursor(fast=True)
+            self._reconnect()
 
     def execSingle(self, query, params=None, return_as: Literal["dict", "df", "list", "single"] | None = None, returnColumns=False):
             self._ensure_connection()
@@ -515,7 +554,7 @@ class postgresConnection():
             if self.cursorSingle.description is not None:
                 rows = self.cursorSingle.fetchall()
                 columns = [desc[0] for desc in self.cursorSingle.description]
-                self.connection.commit()
+                self._commit()
 
                 if return_as:
                     if return_as == "dict":
@@ -531,7 +570,7 @@ class postgresConnection():
                 else:
                     return rows
             else:
-                self.connection.commit()
+                self._commit()
                 return None
 
     @staticmethod
@@ -629,7 +668,7 @@ class postgresConnection():
                     f"ON CONFLICT ({', '.join(qCols[c] for c in mergeKeys)}) DO UPDATE SET {setClause}"
                 )
                 execute_values(self.cursorMany, query, rows, page_size=10000)
-            self.connection.commit()
+            self._commit()
         print("Committing...")
         if log:
             self.execSingle(
@@ -642,7 +681,7 @@ class postgresConnection():
 
                 )
 
-        self.connection.commit()
+        self._commit()
         return
 
     def writeManyEntity(self, df: pd.DataFrame, tableName, schemaName, entity, merge=True, mergeKeys: list = None, syncTableName='syncLog', log=True, logTableName=None, entityColName='entity', updateInsertedTs=False):
@@ -695,7 +734,7 @@ class postgresConnection():
                     f"ON CONFLICT ({', '.join(qCols[c] for c in mergeKeys)}) DO UPDATE SET {setClause}"
                 )
                 execute_values(self.cursorMany, query, rows, page_size=10000)
-            self.connection.commit()
+            self._commit()
         print("Committing...")
         if log:
             self.execSingle(
@@ -706,7 +745,7 @@ class postgresConnection():
                 """,
                 params=[logTableName or tableName, entity, datetime.now().date(), len(df)]
                 )
-        self.connection.commit()
+        self._commit()
         return
 
     def parseValues(self, df: pd.DataFrame):
