@@ -1,6 +1,7 @@
 # import requests
 import os
 import re
+from contextlib import contextmanager
 from datetime import datetime
 from time import monotonic, sleep
 from typing import Literal
@@ -444,11 +445,34 @@ class sqlConnection():
 
 
 class postgresConnection():
+    """Postgres-verbinding (psycopg2) voor ETL-werk.
+
+    Standaard commit elke execSingle/writeMany/writeManyEntity zelf, en herstelt
+    _ensure_connection vóór elke aanroep een afgebroken transactie of verbroken verbinding.
+
+    Transacties: meerdere statements atomair uitvoeren met
+
+        with sqlc.transaction():
+            sqlc.execSingle("SELECT set_config('app.user', %s, true)", ["piet"])
+            sqlc.execSingle("INSERT ...")
+
+    - Binnen het blok committen execSingle, writeMany en writeManyEntity niet zelf; aan het
+      eind van het blok volgt één commit. Bij een exception volgt een rollback en wordt de
+      exception opnieuw gegooid.
+    - Alleen bij het begin van het blok wordt (zo nodig) gepingd of opnieuw verbonden. Binnen
+      het blok wordt nooit stilletjes opnieuw verbonden, want dan gaan eerder werk en
+      SET LOCAL / set_config(..., true) verloren: is de verbinding weg of de transactie
+      afgebroken, dan volgt een psycopg2.OperationalError / InternalError.
+    - Geneste transaction() wordt niet ondersteund en geeft een RuntimeError.
+
+    execSingle(..., return_as='rowcount') geeft cursor.rowcount terug (aantal geraakte rijen).
+    """
 
     def __init__(self, configSql, sqlUser=None, sqlPassword=None):
         self.configSql = configSql
         self.connectionParams = self.constructConnParams(configSql, sqlUser, sqlPassword)
         self.open = None
+        self._inTransaction = False
         self.connection = self.openConnection()
         self.cursorSingle = self.get_cursor()
         self.cursorMany = self.get_cursor(fast=True)
@@ -503,8 +527,34 @@ class postgresConnection():
         return self.connection.cursor()
 
     def _commit(self):
-        self.connection.commit()
+        # binnen transaction() commit alleen het einde van het blok
+        if not self._inTransaction:
+            self.connection.commit()
         self._lastUsed = monotonic()
+
+    @contextmanager
+    def transaction(self):
+        """Voer alle statements in het blok uit als één transactie: één commit aan het eind,
+        rollback (en exception opnieuw gooien) bij een fout. Niet nestbaar."""
+        if self._inTransaction:
+            raise RuntimeError("Geneste postgresConnection.transaction() wordt niet ondersteund")
+
+        # enige moment waarop gepingd / opnieuw verbonden mag worden
+        self._ensure_connection()
+        self._inTransaction = True
+        try:
+            yield self
+        except BaseException:
+            try:
+                self.connection.rollback()
+            except Exception:
+                pass  # verbinding kan al weg zijn; de oorspronkelijke fout is belangrijker
+            raise
+        else:
+            self.connection.commit()
+            self._lastUsed = monotonic()
+        finally:
+            self._inTransaction = False
 
     def _reconnect(self):
         print("Herstellen verbinding met Postgres server")
@@ -520,7 +570,22 @@ class postgresConnection():
     def _ensure_connection(self):
         """Herstel een afgebroken transactie of verbroken verbinding, en ping alleen als de
         verbinding langer dan _PING_AFTER_SECONDS stil lag (een ping kost een round-trip per query)."""
+        import psycopg2
         from psycopg2 import extensions as pgExt
+
+        if self._inTransaction:
+            # nooit stilletjes reconnecten of rollbacken: dan gaat het werk van eerdere
+            # statements en elke SET LOCAL / set_config(..., true) in het blok verloren
+            if self.connection is None or self.connection.closed:
+                raise psycopg2.OperationalError("Verbinding verbroken binnen postgresConnection.transaction()")
+            status = self.connection.get_transaction_status()
+            if status == pgExt.TRANSACTION_STATUS_UNKNOWN:
+                raise psycopg2.OperationalError("Verbinding verbroken binnen postgresConnection.transaction()")
+            if status == pgExt.TRANSACTION_STATUS_INERROR:
+                raise psycopg2.InternalError(
+                    "Transactie is afgebroken door een eerdere fout binnen postgresConnection.transaction()"
+                )
+            return
 
         if self.connection is None or self.connection.closed:
             self._reconnect()
@@ -547,10 +612,17 @@ class postgresConnection():
         except Exception:
             self._reconnect()
 
-    def execSingle(self, query, params=None, return_as: Literal["dict", "df", "list", "single"] | None = None, returnColumns=False):
+    def execSingle(self, query, params=None, return_as: Literal["dict", "df", "list", "single", "rowcount"] | None = None, returnColumns=False):
             self._ensure_connection()
 
             self.cursorSingle.execute(query, params or ())
+            if return_as == "rowcount":
+                rowcount = self.cursorSingle.rowcount
+                if self.cursorSingle.description is not None:
+                    self.cursorSingle.fetchall()
+                self._commit()
+                return rowcount
+
             if self.cursorSingle.description is not None:
                 rows = self.cursorSingle.fetchall()
                 columns = [desc[0] for desc in self.cursorSingle.description]
