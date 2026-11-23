@@ -56,6 +56,8 @@ pip install -e /path/to/utilities-supportfunctions
   `postgresConnection` it rolls back an aborted transaction and reconnects a closed connection, but only
   sends `SELECT 1` after `_PING_AFTER_SECONDS` of inactivity, so a connection dropped within that window
   raises `OperationalError` once and recovers on the next call. Writes are deliberately not retried.
+  Inside `postgresConnection.transaction()` it never reconnects/rolls back (that would silently drop
+  earlier statements and `SET LOCAL`); it raises instead, and `_commit()` is a no-op until the block ends.
   `sqlConnection` still pings before every call.
 - **`parseValues`**: converts a DataFrame into a list of row-tuples suitable for the DB driver, handling
   NaN/None -> `NULL` conversion and per-column dtype coercion (notably booleans, which need their own
